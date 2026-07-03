@@ -1,4 +1,4 @@
-# 🔬 Wound-Closure Analysis GUI
+# Wound-Closure Analysis GUI
 
 A self-contained **Streamlit GUI** for quantifying cell dynamics in time-lapse
 microscopy of zebrafish tailfin wound closure — segmentation, tracking,
@@ -14,7 +14,7 @@ frames**, on a laptop (CPU) or a GPU box (e.g. [Vast.ai](https://vast.ai)).
 
 ---
 
-## ✨ What it does
+## What it does
 
 | Stage | Output |
 |-------|--------|
@@ -31,7 +31,7 @@ auto-play, and downloads.
 
 ---
 
-## 🚀 Quick start (local, laptop)
+## Quick start (local, laptop)
 
 Requires **Python 3.10+**.
 
@@ -52,7 +52,7 @@ it end-to-end immediately.
 
 ---
 
-## 📁 Run it on *your own* data (any folder)
+##  Run it on *your own* data (any folder)
 
 The GUI is not tied to the sample data. In the **left sidebar → Input/Output**:
 
@@ -74,11 +74,11 @@ Then press **▶ RUN PIPELINE**. That's it — nothing is hard-coded.
 You can also **upload** TIFFs directly in the Tracking / Manual-cleaning tabs
 without touching the folder path.
 
-📖 A full, non-programmer, tab-by-tab walkthrough is in **[GUIDE.md](GUIDE.md)**.
+ A full, non-programmer, tab-by-tab walkthrough is in **[GUIDE.md](GUIDE.md)**.
 
 ---
 
-## ☁️ Run on Vast.ai (GPU, for Cellpose)
+## Run on Vast.ai (GPU, for Cellpose)
 
 Cellpose-SAM is much faster and more accurate on a GPU. See the dedicated
 **[VASTAI.md](VASTAI.md)** for the full walkthrough. Short version:
@@ -109,7 +109,7 @@ Cellpose-SAM is much faster and more accurate on a GPU. See the dedicated
 
 ---
 
-## 🖥️ Command-line (no GUI)
+##  Command-line (no GUI)
 
 ```bash
 # diagram-driven pipeline
@@ -122,7 +122,7 @@ python run_analysis.py --data Wound --out results
 
 ---
 
-## 🗂️ Repository layout
+##  Repository layout
 
 ```
 wound-closure-gui/
@@ -142,7 +142,7 @@ wound-closure-gui/
 │   ├── segmentation.py    #   watershed shape analysis
 │   ├── edge_velocity.py / intercalation.py / plotting.py
 ├── run_analysis.py        # CLI driver for wound_analysis
-├── Wound/                 # ✅ bundled sample dataset (44 frames, 512×512)
+├── Wound/                 #  bundled sample dataset (44 frames, 512×512)
 ├── .streamlit/config.toml # Streamlit server settings
 ├── setup_vast.sh          # one-shot GPU-box setup
 ├── serve_web.sh           # public HTTPS tunnel helper
@@ -153,7 +153,7 @@ wound-closure-gui/
 
 ---
 
-## 🧾 Sample dataset
+##  Sample dataset
 
 [`Wound/`](Wound/) contains a real confocal membrane time-lapse:
 **44 frames · 512×512 · 0.3448 µm/px · 31.1 s/frame (≈22 min)**, single-channel
@@ -162,7 +162,7 @@ point the sidebar elsewhere once you're using your own data.
 
 ---
 
-## ⚙️ Notes & troubleshooting
+## Notes & troubleshooting
 
 - **Cellpose is optional.** If `cellpose` isn't installed the app automatically
   falls back to watershed. On first GPU use Cellpose-SAM downloads a ~1.1 GB model.
