@@ -1,0 +1,13 @@
+[server]
+# Don't rerun/disconnect when the pipeline writes files into the project dir
+fileWatcherType = "none"
+runOnSave = false
+maxMessageSize = 800
+maxUploadSize = 800
+
+[browser]
+gatherUsageStats = false
+
+[runner]
+# keep partial UI responsive
+fastReruns = true

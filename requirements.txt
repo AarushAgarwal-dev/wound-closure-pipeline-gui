@@ -1,0 +1,14 @@
+numpy>=1.24
+scipy>=1.10
+scikit-image>=0.21
+tifffile>=2023.1
+matplotlib>=3.7
+opencv-python>=4.5   # boundary detection (cv2.findContours)
+
+# pipeline + GUI (Phase 1/2 workflow and Streamlit app)
+cellpose>=4.0      # deep-learning segmentation backend (pulls torch); optional — watershed fallback works without it
+streamlit>=1.30    # parameter GUI (app.py)
+pandas>=2.0        # tables in the GUI
+# Manual-cleaning tab canvas (install with --no-deps so they don't pin an old Streamlit)
+streamlit-drawable-canvas
+streamlit-image-coordinates
