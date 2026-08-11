@@ -63,6 +63,26 @@ The GUI is not tied to the sample data. In the **left sidebar → Input/Output**
 
 Then press **▶ RUN PIPELINE**. That's it — nothing is hard-coded.
 
+### Start at Step 2 with masks segmented elsewhere
+
+If Cellpose was run on another computer (or the masks came from Fiji, Napari,
+or another segmentation tool), you do not need to run the full pipeline:
+
+1. Set **Data folder**, **File pattern**, and **Max frames** to the matching raw
+   image sequence.
+2. Open **Start at Step 2 — load segmented masks for manual editing** on the main
+   page.
+3. Upload one multi-page label TIFF or multiple single-frame label TIFFs.
+4. Click **Load masks into Step 2**.
+
+The app validates and aligns the masks, then loads them unchanged into
+**② Manual Cleaning**. Use the erase, recover, merge, split, and brush tools,
+then click **Stack (.tiff)** to download the manually edited masks. No automatic
+cleaning, Cellpose, tracking, or other analysis runs during this workflow.
+
+Uploaded masks must use `0` for background and non-negative integers for cell
+labels. Binary masks are converted to connected-component labels automatically.
+
 **Data format**
 - Single-channel TIFF, **one file per time point** (membrane / fluorescence marker).
 - Filenames must sort in time order, e.g. `frame_0001.tif`, `frame_0002.tif`, …
@@ -166,6 +186,11 @@ point the sidebar elsewhere once you're using your own data.
 
 - **Cellpose is optional.** If `cellpose` isn't installed the app automatically
   falls back to watershed. On first GPU use Cellpose-SAM downloads a ~1.1 GB model.
+- **Cellpose says CPU only** → this is supported, but can take roughly 45 seconds
+  per 512×512 frame on a laptop. The GUI disables the GPU option when CUDA is not
+  available and reports model loading separately so it no longer looks frozen.
+- **Cellpose cannot run locally** → segment on another machine and use the
+  **Start at Step 2** mask importer for manual editing; Cellpose is completely skipped.
 - **App disconnects / freezes** → lower **Max frames**; CPU Cellpose is slow.
 - **No cells detected** → adjust **Cell diameter**, or switch to **watershed**.
 - **Wound not detected** → raise **Min wound area**; the wound must be fully

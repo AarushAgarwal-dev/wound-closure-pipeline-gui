@@ -94,6 +94,18 @@ The sidebar contains all adjustable parameters. The most important ones:
 
 After setting parameters, click **▶ RUN PIPELINE**.
 
+### Skip Cellpose and begin with an existing segmented mask
+
+If you already have label masks, open **Start at Step 2 — load segmented masks
+for manual editing** on the main page. Upload a multi-page TIFF stack or several
+single-frame TIFF masks, then click **Load masks into Step 2**. The number and
+size of mask frames must match the selected raw images. The masks are loaded
+unchanged; automatic cleaning and all downstream analyses are skipped.
+
+In **② Manual Cleaning**, use the erase, recover, merge, split, and brush tools.
+Click **Stack (.tiff)** to download the edited mask stack. Use **Update
+everything** only if you also want to continue with downstream analyses.
+
 ---
 
 ### ① Segmentation Tab
@@ -232,6 +244,8 @@ One-click download of every output file the pipeline produced:
 | Problem | Solution |
 |---------|----------|
 | **"cellpose not installed"** | The tool will automatically use the simpler watershed method instead. This is fine for most uses. |
+| **Cellpose will not run on this computer** | Segment elsewhere, then use **Start at Step 2** to upload and clean the label masks directly. |
+| **Cellpose is very slow** | Check the device caption in Segmentation. CPU-only processing can take about 45 seconds per 512×512 frame; reduce **Max frames** while testing. |
 | **App disconnects or freezes** | Reduce **Max frames** in the sidebar. Cellpose is slow on CPU (~15 seconds/frame). |
 | **No cells detected** | Try adjusting the **Cell diameter** slider, or switch to the **watershed** backend. |
 | **Wound not detected** | Increase the **Min wound area** slider, or check that the wound is fully interior (not touching the image edge). |

@@ -49,10 +49,11 @@ def _get_cellpose_model(params):
 
 
 def segment_cellpose(stack, params, progress=None):
-    # single-threaded torch is much less segfault-prone on CPU
+    # A small thread pool keeps CPU inference usable without allowing PyTorch
+    # to consume every core. The isolated worker contains any native crash.
     try:
         import torch
-        torch.set_num_threads(1)
+        torch.set_num_threads(max(1, min(4, (os.cpu_count() or 2) // 2)))
         ctx = torch.inference_mode()
     except Exception:
         import contextlib
@@ -88,8 +89,19 @@ def segment_cellpose_isolated(params, progress=None):
         json.dump(params.to_dict(), fh)
 
     cmd = [sys.executable, "-u", "-m", "pipeline._cellpose_worker", pjson]
+    # Keep the worker importable even if Streamlit was launched from outside
+    # this repository, and limit native CPU thread pools for stability.
+    env = os.environ.copy()
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    old_pythonpath = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = (project_root + os.pathsep + old_pythonpath
+                         if old_pythonpath else project_root)
+    cpu_threads = str(max(1, min(4, (os.cpu_count() or 2) // 2)))
+    env.setdefault("CELLPOSE_NUM_THREADS", cpu_threads)
+    env.setdefault("OMP_NUM_THREADS", cpu_threads)
+    env.setdefault("MKL_NUM_THREADS", cpu_threads)
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                            text=True, bufsize=1)
+                            text=True, bufsize=1, env=env)
     tail = []
     for line in proc.stdout:
         line = line.rstrip()
@@ -135,11 +147,22 @@ def segment_watershed(stack, params, progress=None):
 # entry point
 # --------------------------------------------------------------------------- #
 def cellpose_available():
+    return bool(cellpose_status()["available"])
+
+
+def cellpose_status():
+    """Return lightweight runtime details for GUI diagnostics."""
+    status = {"available": False, "version": None, "cuda": False, "error": None}
     try:
+        import importlib.metadata
         import cellpose  # noqa: F401
-        return True
-    except Exception:
-        return False
+        status["version"] = importlib.metadata.version("cellpose")
+        import torch
+        status["available"] = True
+        status["cuda"] = bool(torch.cuda.is_available())
+    except Exception as exc:
+        status["error"] = str(exc)
+    return status
 
 
 def run(stack, params, progress=None):

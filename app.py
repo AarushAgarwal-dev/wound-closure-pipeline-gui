@@ -110,7 +110,10 @@ def read_uploaded_tiff_stack(files):
         files = [files]
     arrs = []
     for f in sorted(files, key=lambda x: x.name):
-        a = tifffile.imread(io.BytesIO(f.read()))
+        # getvalue() is repeatable across Streamlit reruns; read() advances the
+        # upload cursor and can otherwise produce an empty second read.
+        data = f.getvalue() if hasattr(f, "getvalue") else f.read()
+        a = tifffile.imread(io.BytesIO(data))
         if a.ndim == 3:
             arrs.extend(list(a))
         else:
@@ -299,6 +302,7 @@ def rerun_downstream(out, res, params_obj, stack, progress=None):
     out["edge_frames_present"] = present
     # also persist the cleaned masks that produced these results
     save_cleaned_to_disk(out, params_obj)
+    res["mode"] = "full_pipeline"
     return res, out
 
 
@@ -309,7 +313,13 @@ st.title("🔬 Zebrafish Wound-Closure Pipeline")
 st.caption("Cellpose segmentation → mask cleaning → tracking · morphology · edge kinematics "
            "— EMBRIO Team 5")
 
-cp_ok = seg_mod.cellpose_available()
+@st.cache_resource(show_spinner=False)
+def get_cellpose_status():
+    return seg_mod.cellpose_status()
+
+
+cp_status = get_cellpose_status()
+cp_ok = cp_status["available"]
 
 # --------------------------------------------------------------------------- #
 # sidebar parameters
@@ -334,10 +344,17 @@ with st.sidebar:
         if backend == "cellpose" and not cp_ok:
             st.warning("Cellpose unavailable; will fall back to watershed.")
         if backend == "cellpose":
+            device_label = "CUDA GPU" if cp_status["cuda"] else "CPU only"
+            st.caption(f"Cellpose {cp_status['version'] or 'unknown'} · {device_label}")
             cp_diameter = st.slider("Cell diameter (px, 0=auto)", 0, 80, 30)
             cp_flow = st.slider("Flow threshold", 0.0, 3.0, 0.4, 0.1)
             cp_prob = st.slider("Cellprob threshold", -6.0, 6.0, 0.0, 0.5)
-            cp_gpu = st.checkbox("Use GPU", False)
+            cp_gpu = st.checkbox(
+                "Use GPU", False, disabled=not cp_status["cuda"],
+                help=(None if cp_status["cuda"] else
+                      "CUDA was not detected. Cellpose will run on CPU; use the "
+                      "Step 2 mask importer below if masks were segmented elsewhere.")
+            )
             cp_isolate = st.checkbox("Run Cellpose in a crash-safe subprocess", True,
                                      help="Isolates Cellpose so a segfault/OOM can't take "
                                           "down the app, and frees the model after each run.")
@@ -434,6 +451,48 @@ if run_clicked:
                 "Backend), reduce **Max frames**, or lower the **cell diameter**.")
 
 # --------------------------------------------------------------------------- #
+# Step-2 entry point: import an existing segmented mask and clean it only
+# --------------------------------------------------------------------------- #
+with st.expander("Start at Step 2 — load segmented masks for manual editing", expanded=False):
+    st.caption(
+        "Use this when segmentation was already completed in Cellpose, Fiji, "
+        "Napari, or another tool. Upload one multi-page label TIFF or multiple "
+        "single-frame TIFFs. The masks are loaded unchanged into the Step 2 "
+        "manual tools; no automatic cleaning or downstream analysis is run."
+    )
+    imported_masks = st.file_uploader(
+        "Segmented mask TIFF(s)", type=["tif", "tiff"],
+        accept_multiple_files=True, key="step2_segmented_masks"
+    )
+    if st.button(
+        "Load masks into Step 2", type="primary", key="run_imported_mask_cleaning",
+        disabled=not imported_masks
+    ):
+        bar = st.progress(0.0, text="Reading segmented masks ...")
+
+        def import_cb(frac, msg):
+            bar.progress(min(max(frac, 0.0), 1.0), text=msg)
+
+        try:
+            raw_masks = read_uploaded_tiff_stack(imported_masks)
+            with st.spinner("Loading imported masks ..."):
+                res, outputs = prun.load_masks_for_manual_cleaning(
+                    build_params(), raw_masks, progress=import_cb
+                )
+            st.session_state["res"] = res
+            st.session_state["outputs"] = outputs
+            st.session_state.pop("bnd_results", None)
+            st.success(
+                f"Loaded {res['n_frames']} mask frames unchanged. Open "
+                "**② Manual Cleaning**, edit them with the manual tools, then "
+                "download **Stack (.tiff)**."
+            )
+        except Exception as e:
+            bar.empty()
+            st.error("Could not load and clean the segmented masks.")
+            st.exception(e)
+
+# --------------------------------------------------------------------------- #
 # results
 # --------------------------------------------------------------------------- #
 if "res" not in st.session_state:
@@ -449,7 +508,8 @@ T = stack.shape[0]
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("Frames", res["n_frames"])
 c2.metric("Cells (raw)", res["n_cells_raw"])
-c3.metric("Tracked cells", res["n_tracks"])
+c3.metric("Tracked cells", "—" if res.get("mode") == "manual_cleaning_only"
+          else res["n_tracks"])
 c4.metric("Backend", res["backend"])
 
 def frame_slider_with_buttons(label, max_val, key, default=0):
@@ -846,6 +906,13 @@ with tab2:
 
 # ---- Step 3 ----
 with tab3:
+    if res.get("mode") == "manual_cleaning_only" and "tracked" not in out:
+        st.info(
+            "The imported masks are currently in manual-editing mode. Finish "
+            "editing and download **Stack (.tiff)** from the Manual Cleaning "
+            "tab. Use **Update everything** only if you also want downstream analysis."
+        )
+        st.stop()
     import time
     ts = res.get("track_stats", {})
     st.caption(f"tracked_mask.tiff — each cell keeps its id across time")

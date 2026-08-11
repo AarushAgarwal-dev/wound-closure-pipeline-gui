@@ -25,10 +25,19 @@ def main():
     from pipeline.config import Params
     params = Params.from_dict(d)
 
-    # CPU stability: single-threaded torch avoids the multi-thread segfaults
+    # A bounded thread pool makes laptop CPU inference practical while the
+    # subprocess still contains any native PyTorch crash or out-of-memory exit.
     try:
         import torch
-        torch.set_num_threads(1)
+        n_threads = int(os.environ.get(
+            "CELLPOSE_NUM_THREADS",
+            max(1, min(4, (os.cpu_count() or 2) // 2)),
+        ))
+        torch.set_num_threads(max(1, n_threads))
+        try:
+            torch.set_num_interop_threads(1)
+        except RuntimeError:
+            pass
     except Exception:
         torch = None
 
@@ -41,7 +50,13 @@ def main():
     stack = tl.images[idx]
 
     from cellpose import models
-    model = models.CellposeModel(gpu=params.cp_gpu)
+    print("PROG 0.0100 Loading Cellpose model (first use may download it) ...",
+          flush=True)
+    use_gpu = bool(params.cp_gpu and torch is not None and torch.cuda.is_available())
+    if params.cp_gpu and not use_gpu:
+        print("Cellpose GPU was requested, but CUDA is unavailable; using CPU.",
+              flush=True)
+    model = models.CellposeModel(gpu=use_gpu)
     diam = params.cp_diameter if params.cp_diameter and params.cp_diameter > 0 else None
 
     masks = np.zeros(stack.shape, np.uint16)
