@@ -109,7 +109,8 @@ def read_uploaded_tiff_stack(files):
     if not isinstance(files, (list, tuple)):
         files = [files]
     arrs = []
-    for f in sorted(files, key=lambda x: x.name):
+    from wound_analysis.io_utils import frame_sort_key
+    for f in sorted(files, key=lambda x: frame_sort_key(x.name)):
         # getvalue() is repeatable across Streamlit reruns; read() advances the
         # upload cursor and can otherwise produce an empty second read.
         data = f.getvalue() if hasattr(f, "getvalue") else f.read()
@@ -333,8 +334,18 @@ with st.sidebar:
         out_dir = st.text_input("Output folder", "pipeline_out")
         n_avail = len(glob.glob(os.path.join(data_dir, pattern)))
         st.caption(f"{n_avail} frames found")
+        frame_start = st.number_input(
+            "Start frame (0 = first file)", 0, max(n_avail - 1, 0), 0, step=1,
+            help="Index within the naturally sorted raw files. For masks T001–T049, "
+                 "set this to 1."
+        )
         max_frames = st.number_input("Max frames (0 = all)", 0, 1000, 8, step=1,
                                      help="Cellpose ≈15 s/frame on CPU — cap while experimenting.")
+        remaining_frames = max(n_avail - int(frame_start), 0)
+        if max_frames and remaining_frames > max_frames:
+            st.caption(f"Using {int(max_frames)} sequential frames starting at sorted "
+                       f"frame {int(frame_start)}. Set Max frames to 0 to use all "
+                       "remaining files.")
 
     with st.expander("① Segmentation", expanded=True):
         backend_opts = ["cellpose", "watershed"]
@@ -407,6 +418,7 @@ with st.sidebar:
 def build_params():
     return config.Params(
         data_dir=data_dir, pattern=pattern, out_dir=out_dir, max_frames=int(max_frames),
+        frame_start=int(frame_start),
         backend=backend, cp_diameter=float(cp_diameter), cp_flow_threshold=float(cp_flow),
         cp_cellprob_threshold=float(cp_prob), cp_gpu=bool(cp_gpu),
         cp_isolate=bool(cp_isolate),
@@ -542,6 +554,9 @@ with tab1:
     f = frame_slider_with_buttons("Frame", T - 1, "seg_frame", 0)
 
     a, b, c = st.columns(3)
+    source_files = out.get("source_files", [])
+    if f < len(source_files):
+        st.caption(f"Raw frame {f}: `{os.path.basename(source_files[f])}` ↔ mask frame {f}")
     a.image(norm_rgb(stack[f]), caption=f"original tiff (frame {f})", width='stretch')
     b.image(label_rgb(out["masks"][f], detection.normalize(stack[f])),
             caption=f"mask.tiff (segmentation) (frame {f})", width='stretch')

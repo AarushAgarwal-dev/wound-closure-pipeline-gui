@@ -79,8 +79,9 @@ class Params:
         end = n_total - 1 if self.frame_end < 0 else min(self.frame_end, n_total - 1)
         idx = list(range(self.frame_start, end + 1))
         if self.max_frames and len(idx) > self.max_frames > 0:
-            step = len(idx) / self.max_frames
-            idx = [idx[int(i * step)] for i in range(self.max_frames)]
+            # A frame cap means the first N sequential frames. Evenly
+            # subsampling here silently misaligns imported masks with images.
+            idx = idx[:self.max_frames]
         return idx
 
     def to_dict(self):

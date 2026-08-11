@@ -86,6 +86,14 @@ labels. Binary masks are converted to connected-component labels automatically.
 **Data format**
 - Single-channel TIFF, **one file per time point** (membrane / fluorescence marker).
 - Filenames must sort in time order, e.g. `frame_0001.tif`, `frame_0002.tif`, …
+- `_T###` and `_t###` time indices are recognized case-insensitively and sorted
+  numerically. For files such as `surface_max_T000.tif`, use the pattern
+  `surface_max_T*.tif`.
+- **Max frames** uses the first N sequential files after sorting. Set it to `0`
+  when importing a mask for every raw frame.
+- If a mask stack covers a contiguous subset, set **Start frame** to its first
+  sorted raw-frame index. For example, use Start frame `1` and Max frames `49`
+  for masks corresponding to `T001–T049`.
 - For 3-D stacks, **max- or sum-project to 2-D first**.
 - Pixel size (µm/px) and frame interval (s) are read automatically from ImageJ
   TIFF tags when present; otherwise the sidebar fallbacks

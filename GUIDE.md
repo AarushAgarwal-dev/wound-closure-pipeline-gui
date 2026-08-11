@@ -89,10 +89,18 @@ The sidebar contains all adjustable parameters. The most important ones:
 |-----------|-------------|-------------|
 | **Data folder** | Where your TIFF images are | `Wound` (default) |
 | **Max frames** | Limits how many frames to process | Start with 8 to test, then set to 0 for all |
+| **Start frame** | First naturally sorted raw frame to load | `0`, or `1` if masks begin at T001 |
 | **Backend** | Segmentation method | `cellpose` (more accurate) or `watershed` (faster) |
 | **Cell diameter** | Expected cell size in pixels | 30 (adjust if cells are much larger/smaller) |
 
 After setting parameters, click **▶ RUN PIPELINE**.
+
+Files containing `_T###` or `_t###` are sorted by that number. For example,
+`surface_max_T000.tif` through `surface_max_T049.tif` should use the file
+pattern `surface_max_T*.tif`. **Max frames** takes the first N sequential files;
+use `0` when every raw frame has a corresponding mask frame. If a 49-frame mask
+stack corresponds to `T001–T049`, set **Start frame** to `1` and **Max frames**
+to `49`; for `T000–T048`, use Start frame `0`.
 
 ### Skip Cellpose and begin with an existing segmented mask
 

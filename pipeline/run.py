@@ -84,7 +84,7 @@ def load_masks_for_manual_cleaning(params, masks, progress=None):
     """
     if progress:
         progress(0.0, "Loading image frames ...")
-    stack, frame_idx, _tl = segment.load_stack(params)
+    stack, frame_idx, tl = segment.load_stack(params)
     masks = _prepare_imported_masks(masks, stack, frame_idx)
 
     os.makedirs(params.out_dir, exist_ok=True)
@@ -115,6 +115,7 @@ def load_masks_for_manual_cleaning(params, masks, progress=None):
         "masks": masks,
         "cleaned": cleaned,
         "frame_idx": frame_idx,
+        "source_files": [tl.files[i] for i in frame_idx],
     }
     if progress:
         progress(1.0, "Masks loaded for manual cleaning.")
@@ -161,7 +162,8 @@ def run_pipeline(params, progress=None, steps=("track", "morphology", "kinematic
     res["track_stats"] = tstats
 
     outputs = {"stack": stack, "masks": masks, "cleaned": cleaned, "tracked": tracked,
-               "frame_idx": frame_idx}
+               "frame_idx": frame_idx,
+               "source_files": [tl.files[i] for i in frame_idx]}
 
     # ---- tracking visualisations: GIF (per frame) + trajectory + counts ----
     times_min = [t * params.dt_s / 60.0 for t in range(len(frame_idx))]

@@ -7,7 +7,8 @@ calibration (microns per pixel, seconds per frame) straight from the ImageJ
 TIFF tags, so every downstream measurement comes out in real units.
 
 The folder ``Wound/`` holds one single-channel (membrane / 561 nm) frame per
-file, named ``..._t<NNNN>.tif``.  We sort by that time index and stack to
+file, named ``..._t<NNNN>.tif`` or ``..._T<NNNN>.tif``. We sort by that time
+index and stack to
 ``(T, Y, X)`` uint16.
 """
 
@@ -42,8 +43,25 @@ class Timelapse:
 
 
 def _frame_index(path: str) -> int:
-    m = re.search(r"_t(\d+)", os.path.basename(path))
+    """Extract a case-insensitive ``_T###`` time index from a filename."""
+    m = re.search(r"(?:^|[_-])t(\d+)", os.path.basename(path), re.IGNORECASE)
     return int(m.group(1)) if m else 0
+
+
+def _natural_name_key(path: str):
+    """Natural filename key so frame2 sorts before frame10."""
+    parts = re.split(r"(\d+)", os.path.basename(path).lower())
+    return tuple((0, int(part)) if part.isdigit() else (1, part)
+                 for part in parts if part)
+
+
+def frame_sort_key(path: str):
+    """Sort microscopy files by T index, with natural-name fallback."""
+    name = os.path.basename(path)
+    match = re.search(r"(?:^|[_-])t(\d+)", name, re.IGNORECASE)
+    if match:
+        return (0, int(match.group(1)), _natural_name_key(name))
+    return (1, _natural_name_key(name))
 
 
 def _read_calibration(path: str):
@@ -69,7 +87,7 @@ def _read_calibration(path: str):
 
 def load_wound(folder: str = "Wound", pattern: str = "*.tif") -> Timelapse:
     """Load the wound time-lapse from ``folder`` into a :class:`Timelapse`."""
-    files = sorted(glob.glob(os.path.join(folder, pattern)), key=_frame_index)
+    files = sorted(glob.glob(os.path.join(folder, pattern)), key=frame_sort_key)
     if not files:
         raise FileNotFoundError(f"no TIFFs matching {pattern!r} in {folder!r}")
     px_size_um, dt_s = _read_calibration(files[0])
