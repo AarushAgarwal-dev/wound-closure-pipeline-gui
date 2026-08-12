@@ -654,6 +654,14 @@ with tab2:
                           key="mc_action")
     with col_mc_slider:
         f_mc = frame_slider_with_buttons("Frame", T - 1, "mc_frame", 0)
+
+    editor_size_pct = st.slider(
+        "Editor display size (%)", 50, 200, 100, 25,
+        key="mc_editor_size_pct",
+        help="Changes only the on-screen editor. Mask coordinates, brush "
+             "sizes, split thickness, saved files, and downloads remain at "
+             "the original image resolution.",
+    )
         
     # Clear merge target if mode changes
     if action != "🔗 Merge" and "merge_target" in st.session_state:
@@ -677,11 +685,19 @@ with tab2:
     canvas_key = (f"mc_coords_{tool_id}_{f_mc}_"
                   f"{st.session_state.get('mc_update', 0)}_"
                   f"{st.session_state.get('mc_tool_epoch', 0)}_"
-                  f"{st.session_state.get('mc_canvas_reset', 0)}")
+                  f"{st.session_state.get('mc_canvas_reset', 0)}_"
+                  f"{editor_size_pct}")
     stored_value = st.session_state.get(canvas_key) \
         if action != "🖌️ Brush Draw" else None
     source_height, source_width = out["cleaned"][f_mc].shape
-    editor_scale = min(1.0, 600 / source_width, 720 / source_height)
+    size_multiplier = editor_size_pct / 100.0
+    editor_max_width = round(600 * size_multiplier)
+    editor_max_height = round(720 * size_multiplier)
+    editor_scale = min(
+        1.0,
+        editor_max_width / source_width,
+        editor_max_height / source_height,
+    )
     value = manual_editor_click_to_source(
         stored_value, editor_scale, out["cleaned"][f_mc].shape)
 
@@ -741,17 +757,33 @@ with tab2:
                             bg_img_array_uint8[filled_mask & (current_cleaned == 0)] = [255, 255, 0] # Yellow
 
     bg_img = Image.fromarray(bg_img_array_uint8)
-    display_bg_img, editor_scale = fit_manual_editor_image(bg_img)
+    display_bg_img, editor_scale = fit_manual_editor_image(
+        bg_img, max_width=editor_max_width, max_height=editor_max_height)
+
+    st.caption(
+        f"Editor view: {display_bg_img.width} × {display_bg_img.height} px "
+        f"({editor_scale:.0%} of original) · source/download: "
+        f"{source_width} × {source_height} px"
+    )
 
     # Re-map the stored click now that the display scale is known.
     value = manual_editor_click_to_source(
         stored_value, editor_scale, out["cleaned"][f_mc].shape)
 
-    col_img, col_actions = st.columns([3, 1])
+    # Expanded views use the entire content width; settings and action buttons
+    # move below/above the image rather than covering or squeezing it.
+    if editor_size_pct > 100:
+        col_settings = st.container()
+        col_img = st.container()
+        col_actions = st.container()
+    else:
+        col_img, col_side = st.columns([3, 1])
+        col_settings = col_side
+        col_actions = col_side
     
     brush_size = 5
     brush_replace = False
-    with col_actions:
+    with col_settings:
         if action == "🖌️ Brush Draw":
             st.write("### Brush Settings")
             brush_size = st.slider("Brush Size", 1, 60, 8)

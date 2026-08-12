@@ -46,6 +46,10 @@ Use **Segment only → Step 2** when you want to run Cellpose or watershed and
 stop immediately after segmentation. It skips automatic cleaning, tracking,
 and analysis, exposes the raw TIFF download, and opens the drawing editor.
 
+The manual editor includes a 50%–200% display-size control. Larger views switch
+to a full-width layout and remain capped at the source image resolution; all
+clicks and drawing strokes still map to the original mask pixels.
+
 ---
 
 ## Quick start (local, laptop)

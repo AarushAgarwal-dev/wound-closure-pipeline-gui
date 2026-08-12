@@ -181,6 +181,12 @@ to fit the browser while editing, but all edits and downloaded TIFFs retain the
 original mask dimensions. You can safely switch between Brush Draw, Split, and
 the click-based tools; each tool uses its own editor state.
 
+Use **Editor display size (%)** to shrink or enlarge the manual editor from 50%
+to 200% of its fitted size. Expanded views automatically use the full page
+width. The display is never enlarged past the source image resolution, and the
+size control does not change edit coordinates, brush size, split thickness, or
+the dimensions of saved/downloaded masks.
+
 ---
 
 ### ③ Tracking Tab
