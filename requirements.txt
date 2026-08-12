@@ -10,5 +10,5 @@ cellpose>=4.0      # deep-learning segmentation backend (pulls torch); optional 
 streamlit>=1.30    # parameter GUI (app.py)
 pandas>=2.0        # tables in the GUI
 # Manual-cleaning tab canvas (install with --no-deps so they don't pin an old Streamlit)
-streamlit-drawable-canvas
+streamlit-drawable-canvas==0.9.3
 streamlit-image-coordinates

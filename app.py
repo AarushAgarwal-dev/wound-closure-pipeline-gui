@@ -19,6 +19,11 @@ import numpy as np
 import streamlit as st
 
 from pipeline import config, run as prun, segment as seg_mod
+from pipeline.editor_utils import (
+    fit_manual_editor_image,
+    manual_editor_click_to_source,
+    manual_editor_mask_to_source,
+)
 from wound_analysis import detection
 
 st.set_page_config(page_title="Wound-Closure Pipeline", page_icon="🔬", layout="wide")
@@ -525,6 +530,9 @@ c3.metric("Tracked cells", "—" if res.get("mode") == "manual_cleaning_only"
 c4.metric("Backend", res["backend"])
 
 def frame_slider_with_buttons(label, max_val, key, default=0):
+    if max_val <= 0:
+        st.caption(f"{label}: 0 (single frame)")
+        return 0
     if key not in st.session_state:
         st.session_state[key] = default
         
@@ -585,7 +593,10 @@ with tab2:
     
     col_mc_action, col_mc_slider = st.columns([2, 2])
     with col_mc_action:
-        action = st.radio("Action Mode", ["🧽 Erase", "➕ Add / Recover", "🔗 Merge", "✂️ Split", "🖌️ Brush Draw"], horizontal=True, key="mc_action")
+        action_options = ["🧽 Erase", "➕ Add / Recover", "🔗 Merge",
+                          "✂️ Split", "🖌️ Brush Draw"]
+        action = st.radio("Action Mode", action_options, horizontal=True,
+                          key="mc_action")
     with col_mc_slider:
         f_mc = frame_slider_with_buttons("Frame", T - 1, "mc_frame", 0)
         
@@ -595,25 +606,44 @@ with tab2:
     # Clear split state if mode changes
     if action != "✂️ Split" and "split_pending" in st.session_state:
         del st.session_state["split_pending"]
+
+    # Every tool gets a fresh component key. Reusing a drawable-canvas state as
+    # an image-coordinate state can crash the component after switching tools.
+    if st.session_state.get("mc_previous_action") != action:
+        st.session_state["mc_tool_epoch"] = \
+            st.session_state.get("mc_tool_epoch", 0) + 1
+        st.session_state["mc_previous_action"] = action
         
-    # -- Compatibility shim for streamlit-drawable-canvas on Streamlit >=1.38 --
-    # The canvas package calls st_image.image_to_url(img, width_int, clamp, channels, fmt, id)
-    # but that function moved to streamlit.elements.lib.image_utils and now expects a
-    # LayoutConfig object instead of an int width. We provide a thin wrapper.
+    # Compatibility shim for streamlit-drawable-canvas on Streamlit >=1.38.
+    # The canvas package calls st_image.image_to_url with the old signature.
+    canvas_result = None
     import streamlit.elements.image as st_image
     if not hasattr(st_image, "image_to_url"):
         from streamlit.elements.lib.image_utils import image_to_url as _real_image_to_url
         from streamlit.elements.lib.layout_utils import LayoutConfig as _LayoutConfig
-        def _compat_image_to_url(image, width, clamp, channels, output_format, image_id):
-            layout_cfg = _LayoutConfig(width=width if isinstance(width, str) else "content")
-            return _real_image_to_url(image, layout_cfg, clamp, channels, output_format, image_id)
+
+        def _compat_image_to_url(image, width, clamp, channels,
+                                 output_format, image_id):
+            layout_cfg = _LayoutConfig(
+                width=width if isinstance(width, str) else "content")
+            return _real_image_to_url(
+                image, layout_cfg, clamp, channels, output_format, image_id)
+
         st_image.image_to_url = _compat_image_to_url
     from streamlit_drawable_canvas import st_canvas
     from streamlit_image_coordinates import streamlit_image_coordinates
     from PIL import Image
 
-    canvas_key = f"mc_coords_{f_mc}_{st.session_state.get('mc_update', 0)}"
-    value = st.session_state.get(canvas_key) if action != "🖌️ Brush Draw" else None
+    tool_id = action_options.index(action)
+    canvas_key = (f"mc_coords_{tool_id}_{f_mc}_"
+                  f"{st.session_state.get('mc_update', 0)}_"
+                  f"{st.session_state.get('mc_tool_epoch', 0)}")
+    stored_value = st.session_state.get(canvas_key) \
+        if action != "🖌️ Brush Draw" else None
+    source_height, source_width = out["cleaned"][f_mc].shape
+    editor_scale = min(1.0, 600 / source_width, 720 / source_height)
+    value = manual_editor_click_to_source(
+        stored_value, editor_scale, out["cleaned"][f_mc].shape)
 
     bg_img_array = label_rgb(out["cleaned"][f_mc], detection.normalize(stack[f_mc]))
     bg_img_array_uint8 = (bg_img_array * 255).astype(np.uint8)
@@ -671,6 +701,11 @@ with tab2:
                             bg_img_array_uint8[filled_mask & (current_cleaned == 0)] = [255, 255, 0] # Yellow
 
     bg_img = Image.fromarray(bg_img_array_uint8)
+    display_bg_img, editor_scale = fit_manual_editor_image(bg_img)
+
+    # Re-map the stored click now that the display scale is known.
+    value = manual_editor_click_to_source(
+        stored_value, editor_scale, out["cleaned"][f_mc].shape)
 
     col_img, col_actions = st.columns([3, 1])
     
@@ -685,12 +720,12 @@ with tab2:
             st.caption("Draw on the image to create a new cell mask. Existing cells will **NOT** be overwritten.")
             canvas_result = st_canvas(
                 fill_color="rgba(0, 255, 0, 0.5)",
-                stroke_width=brush_size,
+                stroke_width=max(1, round(brush_size * editor_scale)),
                 stroke_color="rgba(0, 255, 0, 1.0)",
-                background_image=bg_img,
+                background_image=display_bg_img,
                 update_streamlit=True,
-                height=bg_img.height,
-                width=bg_img.width,
+                height=display_bg_img.height,
+                width=display_bg_img.width,
                 drawing_mode="freedraw",
                 key=f"brush_{canvas_key}",
             )
@@ -698,24 +733,30 @@ with tab2:
             st.caption("Draw a line across a cell to split it into two. The line gap separates the halves.")
             canvas_result = st_canvas(
                 fill_color="rgba(255, 255, 0, 0.0)",
-                stroke_width=st.session_state.get("split_width", 3),
+                stroke_width=max(1, round(
+                    st.session_state.get("split_width", 3) * editor_scale)),
                 stroke_color="rgba(255, 255, 0, 1.0)",
-                background_image=bg_img,
+                background_image=display_bg_img,
                 update_streamlit=True,
-                height=bg_img.height,
-                width=bg_img.width,
+                height=display_bg_img.height,
+                width=display_bg_img.width,
                 drawing_mode="line",
                 key=f"split_{canvas_key}",
             )
         else:
-            value = streamlit_image_coordinates(bg_img, key=canvas_key)
+            displayed_value = streamlit_image_coordinates(
+                display_bg_img, key=canvas_key)
+            value = manual_editor_click_to_source(
+                displayed_value, editor_scale, out["cleaned"][f_mc].shape)
         
     with col_actions:
         if action == "✂️ Split":
             st.write("### Split Settings")
             split_width = st.slider("Line thickness (px)", 1, 10, 3, key="split_width")
             if canvas_result is not None and canvas_result.image_data is not None:
-                split_line_mask = canvas_result.image_data[:, :, 3] > 0
+                split_line_mask = manual_editor_mask_to_source(
+                    canvas_result.image_data[:, :, 3] > 0,
+                    out["cleaned"][f_mc].shape)
                 if split_line_mask.any():
                     current_cleaned = out["cleaned"][f_mc]
                     # Find which cell(s) the line crosses
@@ -758,7 +799,9 @@ with tab2:
 
         elif action == "🖌️ Brush Draw":
             if canvas_result is not None and canvas_result.image_data is not None:
-                drawn_mask = canvas_result.image_data[:, :, 3] > 0
+                drawn_mask = manual_editor_mask_to_source(
+                    canvas_result.image_data[:, :, 3] > 0,
+                    out["cleaned"][f_mc].shape)
                 if drawn_mask.any():
                     st.write("**Drawn stroke detected.**")
                     if st.button("Apply Brush Stroke", type="primary", width='stretch'):
@@ -886,38 +929,40 @@ with tab2:
                                     st.session_state["merge_target"] = None
                                     st.rerun()
             
-        st.markdown("---")
-        st.write("**Save / export your corrections**")
-        params_obj = build_params()
-        _T = out["cleaned"].shape[0]
-        sc1, sc2, sc3 = st.columns(3)
-        if sc1.button("💾 Save all permanently", key="save_cleaned_mc",
-                      width='stretch', help="Writes the edited cleaned_mask.tiff to the output folder"):
-            p = save_cleaned_to_disk(out, params_obj)
-            st.success(f"Saved → {p}")
-        sc2.download_button(f"⬇ All {_T} masks (.zip)",
-                            data=masks_to_zip_bytes(out["cleaned"]),
-                            file_name="cleaned_masks.zip", mime="application/zip",
-                            width='stretch', key="dl_cleaned_zip",
-                            help=f"One TIFF per frame ({_T} files), zipped")
-        sc3.download_button("⬇ Stack (.tiff)",
-                            data=masks_to_tiff_bytes(out["cleaned"]),
-                            file_name="cleaned_mask.tiff", mime="image/tiff",
-                            width='stretch', key="dl_cleaned_mc",
-                            help=f"Single multi-page TIFF with all {_T} frames")
+    # Full-width controls below the image/action row so they never squeeze the
+    # editor into the right-hand column.
+    st.markdown("---")
+    st.write("**Save / export your corrections**")
+    params_obj = build_params()
+    _T = out["cleaned"].shape[0]
+    sc1, sc2, sc3 = st.columns(3)
+    if sc1.button("💾 Save all permanently", key="save_cleaned_mc",
+                  width='stretch', help="Writes the edited cleaned_mask.tiff to the output folder"):
+        p = save_cleaned_to_disk(out, params_obj)
+        st.success(f"Saved → {p}")
+    sc2.download_button(f"⬇ All {_T} masks (.zip)",
+                        data=masks_to_zip_bytes(out["cleaned"]),
+                        file_name="cleaned_masks.zip", mime="application/zip",
+                        width='stretch', key="dl_cleaned_zip",
+                        help=f"One TIFF per frame ({_T} files), zipped")
+    sc3.download_button("⬇ Stack (.tiff)",
+                        data=masks_to_tiff_bytes(out["cleaned"]),
+                        file_name="cleaned_mask.tiff", mime="image/tiff",
+                        width='stretch', key="dl_cleaned_mc",
+                        help=f"Single multi-page TIFF with all {_T} frames")
 
-        st.markdown("---")
-        st.write("After manual cleaning, re-run downstream steps to update everything.")
-        if st.button("🔄 Update everything (tracking · morphology · intensity · edges)",
-                     key="update_downstream_mc", type="primary", width='stretch'):
-            with st.spinner("Re-running tracking, morphology, intensity, kinematics + GIFs..."):
-                res2, out2 = rerun_downstream(out, res, params_obj, stack)
-                st.session_state["res"] = res2
-                st.session_state["outputs"] = out2
-            st.success("All downstream results updated from your corrections.")
-            import time
-            time.sleep(1)
-            st.rerun()
+    st.markdown("---")
+    st.write("After manual cleaning, re-run downstream steps to update everything.")
+    if st.button("🔄 Update everything (tracking · morphology · intensity · edges)",
+                 key="update_downstream_mc", type="primary", width='stretch'):
+        with st.spinner("Re-running tracking, morphology, intensity, kinematics + GIFs..."):
+            res2, out2 = rerun_downstream(out, res, params_obj, stack)
+            st.session_state["res"] = res2
+            st.session_state["outputs"] = out2
+        st.success("All downstream results updated from your corrections.")
+        import time
+        time.sleep(1)
+        st.rerun()
 
 # ---- Step 3 ----
 with tab3:

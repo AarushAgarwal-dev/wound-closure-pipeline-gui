@@ -29,6 +29,11 @@ frames**, on a laptop (CPU) or a GPU box (e.g. [Vast.ai](https://vast.ai)).
 All of it is exposed in tabbed GUI with live progress, frame viewers,
 auto-play, and downloads.
 
+Large masks are scaled to fit the manual editor for display only; clicks and
+brush strokes are mapped back to the full-resolution label image. Save and
+download controls appear below the editor, and switching between brush, split,
+and click-based tools starts a fresh editor state.
+
 ---
 
 ## Quick start (local, laptop)

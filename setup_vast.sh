@@ -24,7 +24,7 @@ pip install \
   opencv-python-headless
 
 echo "==> Manual-cleaning UI components (no-deps so they can't downgrade Streamlit)"
-pip install --no-deps streamlit-drawable-canvas streamlit-image-coordinates
+pip install --no-deps "streamlit-drawable-canvas==0.9.3" streamlit-image-coordinates
 
 echo "==> Verifying CUDA is still intact + Blackwell kernel works"
 python - <<'PY'

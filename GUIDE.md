@@ -155,6 +155,11 @@ If the automatic segmentation made mistakes, you can fix them here by hand.
 - ⬇ **Stack (.tiff)** — downloads a single multi-frame TIFF
 - 🔄 **Update everything** — re-runs tracking and analysis with your corrections
 
+The save and download controls are below the editor. Large images are reduced
+to fit the browser while editing, but all edits and downloaded TIFFs retain the
+original mask dimensions. You can safely switch between Brush Draw, Split, and
+the click-based tools; each tool uses its own editor state.
+
 ---
 
 ### ③ Tracking Tab
@@ -248,6 +253,19 @@ One-click download of every output file the pipeline produced:
 ---
 
 ## Troubleshooting
+
+### The drawing canvas does not load
+
+If Streamlit says it is having trouble loading `streamlit_drawable_canvas`,
+reinstall the canvas frontend from the project folder and restart the GUI:
+
+```bash
+pip install --force-reinstall --no-deps streamlit-drawable-canvas==0.9.3
+streamlit run app.py
+```
+
+This replaces missing or corrupted component frontend assets without changing
+Streamlit or the rest of the scientific Python environment.
 
 | Problem | Solution |
 |---------|----------|
