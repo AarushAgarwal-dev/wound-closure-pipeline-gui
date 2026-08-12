@@ -76,44 +76,63 @@ def extended_split_line_mask(drawn_mask, source_shape):
 
 
 def split_labels_with_drawn_line(labels, drawn_mask, thickness=3):
-    """Split only labels touched by a user-drawn line.
+    """Partition each touched label into exactly two labels.
 
     Returns ``(updated_labels, touched_ids, split_ids)``. A touched label is
-    left unchanged unless the extended cut actually creates two components.
+    left unchanged unless the drawn line has cell pixels on both sides. Every
+    original cell pixel is retained: pixels in the thick line band are merged
+    into the larger side instead of becoming background or a third fragment.
     """
-    from skimage.measure import label as connected_components
-    from skimage.morphology import dilation, disk
-
     original = np.asarray(labels)
     drawn_mask = np.asarray(drawn_mask, dtype=bool)
     touched_ids = [int(v) for v in np.unique(original[drawn_mask]) if v > 0]
     if not touched_ids:
         return original.copy(), [], []
 
-    cut = extended_split_line_mask(drawn_mask, original.shape)
-    radius = max(0, int(thickness) // 2)
-    if radius:
-        cut = dilation(cut, disk(radius))
+    line_y, line_x = np.nonzero(drawn_mask)
+    if len(line_x) < 2:
+        return original.copy(), touched_ids, []
+    line_points = np.column_stack((line_x, line_y)).astype(float)
+    center = line_points.mean(axis=0)
+    _, _, axes = np.linalg.svd(line_points - center, full_matrices=False)
+    direction = axes[0]
+    # A normal vector gives a stable signed side for every source-mask pixel.
+    normal = np.array((-direction[1], direction[0]))
+    half_band = max(0.0, float(thickness) / 2.0)
 
     updated = original.copy()
     next_id = int(updated.max()) + 1
     split_ids = []
     for cell_id in touched_ids:
         cell = original == cell_id
-        pieces = connected_components(cell & ~cut, connectivity=2)
-        component_ids = [int(v) for v in np.unique(pieces) if v > 0]
-        if len(component_ids) < 2:
+        cell_y, cell_x = np.nonzero(cell)
+        signed_distance = ((cell_x - center[0]) * normal[0] +
+                           (cell_y - center[1]) * normal[1])
+        first = signed_distance < -half_band
+        second = signed_distance > half_band
+
+        # If a very thick band covers one entire side, retry at the line
+        # centre. We still require pixels on both sides to accept the split.
+        if not first.any() or not second.any():
+            first = signed_distance < 0
+            second = signed_distance > 0
+        if not first.any() or not second.any():
             continue
 
-        # Keep the original ID on the largest piece and allocate new IDs to
-        # the remaining pieces. Cut pixels become background.
-        component_ids.sort(
-            key=lambda v: int(np.count_nonzero(pieces == v)), reverse=True)
+        line_band = ~(first | second)
+        if np.count_nonzero(first) >= np.count_nonzero(second):
+            first |= line_band
+        else:
+            second |= line_band
+
+        # Preserve the old ID on the larger side and use exactly one new ID on
+        # the other. This retains the complete original cell area.
+        if np.count_nonzero(second) > np.count_nonzero(first):
+            first, second = second, first
         updated[cell] = 0
-        updated[pieces == component_ids[0]] = cell_id
-        for component_id in component_ids[1:]:
-            updated[pieces == component_id] = next_id
-            next_id += 1
+        updated[cell_y[first], cell_x[first]] = cell_id
+        updated[cell_y[second], cell_x[second]] = next_id
+        next_id += 1
         split_ids.append(cell_id)
 
     return updated, touched_ids, split_ids

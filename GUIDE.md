@@ -155,7 +155,9 @@ If the automatic segmentation made mistakes, you can fix them here by hand.
 
 The drawn split line is extended through the cell(s) it touches, so the drag
 does not need to reach the exact outer boundary. Use **Cut thickness** for
-difficult shapes and **Clear split line** to redraw before applying.
+difficult shapes and **Clear split line** to redraw before applying. Split
+always creates exactly two labels: the line band and any small fragments are
+merged into one of the two sides rather than retained as extra cells.
 
 Brush Draw remains a freehand click-and-drag tool. Increase **Brush Size** for
 larger corrections, enable **Paint over existing cells** when the new cell must

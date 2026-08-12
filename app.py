@@ -793,8 +793,8 @@ with tab2:
             )
         elif action == "✂️ Split":
             st.caption(
-                "Click and drag a line across the cell. The cut is extended "
-                "through only the cell(s) touched by your line."
+                "Click and drag a line across the cell. Every cell pixel, "
+                "including the line band, is assigned to exactly one of two sides."
             )
             canvas_result = stable_drawable_canvas(
                 fill_color="rgba(255, 255, 0, 0.0)",
