@@ -678,6 +678,15 @@ with tab2:
         st.session_state["mc_previous_action"] = action
         
     canvas_result = None
+    # streamlit-image-coordinates releases use either the old
+    # ``UseColumnWidth`` name or a misspelled ``UseColumnWith`` type alias.
+    # Streamlit 1.38+ renamed it to ``Width``. Supply both aliases before
+    # importing the optional click-tool component so current Streamlit works
+    # on macOS, Windows, and Linux without a manual package downgrade.
+    import streamlit.elements.image as st_image
+    for legacy_name in ("UseColumnWidth", "UseColumnWith"):
+        if not hasattr(st_image, legacy_name):
+            st_image.__dict__[legacy_name] = st_image.Width
     from streamlit_image_coordinates import streamlit_image_coordinates
     from PIL import Image
 
