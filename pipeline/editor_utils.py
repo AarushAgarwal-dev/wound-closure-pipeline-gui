@@ -17,38 +17,6 @@ def fit_manual_editor_image(image, max_width=600, max_height=720):
     return image.resize(size, resampling.LANCZOS), scale
 
 
-def stable_drawable_canvas(background_image, **kwargs):
-    """Render the drawing canvas with an embedded, rerun-safe background.
-
-    The third-party canvas normally publishes the PIL background through a
-    temporary Streamlit media URL. Embedding that image as a data URL avoids
-    intermittent blank canvases when a rerun invalidates the temporary URL.
-    """
-    import base64
-    import io
-    import streamlit.elements.image as st_image
-    from streamlit_drawable_canvas import st_canvas
-
-    buf = io.BytesIO()
-    background_image.convert("RGB").save(buf, format="PNG", compress_level=1)
-    data_url = "data:image/png;base64," + base64.b64encode(
-        buf.getvalue()).decode("ascii")
-
-    previous = getattr(st_image, "image_to_url", None)
-
-    def _embedded_background(*_args, **_kwargs):
-        return data_url
-
-    st_image.image_to_url = _embedded_background
-    try:
-        return st_canvas(background_image=background_image, **kwargs)
-    finally:
-        if previous is None:
-            delattr(st_image, "image_to_url")
-        else:
-            st_image.image_to_url = previous
-
-
 def manual_editor_click_to_source(value, scale, source_shape):
     """Validate a displayed-image click and map it to source-mask pixels."""
     if not isinstance(value, dict) or "x" not in value or "y" not in value:

@@ -25,8 +25,8 @@ from pipeline.editor_utils import (
     manual_editor_click_to_source,
     manual_editor_mask_to_source,
     split_labels_with_drawn_line,
-    stable_drawable_canvas,
 )
+from pipeline.drawable_canvas import stable_drawable_canvas
 from wound_analysis import detection
 
 st.set_page_config(page_title="Wound-Closure Pipeline", page_icon="🔬", layout="wide")

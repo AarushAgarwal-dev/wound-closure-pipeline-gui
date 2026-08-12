@@ -38,7 +38,9 @@ The Segmentation tab also provides **Raw segmented stack (.tiff)** and a ZIP of
 separate raw mask frames. The downloaded `mask.tiff` can be uploaded directly
 through **Start at Step 2** in a later session. Brush and Split remain
 click-and-drag drawing tools; their image background is embedded so it remains
-available while switching tools or rerunning the page.
+available while switching tools or rerunning the page. The project uses a
+versioned local canvas endpoint so stale third-party frontend assets cannot
+hide the microscopy background.
 
 Use **Segment only → Step 2** when you want to run Cellpose or watershed and
 stop immediately after segmentation. It skips automatic cleaning, tracking,
