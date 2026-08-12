@@ -20,9 +20,12 @@ import streamlit as st
 
 from pipeline import config, run as prun, segment as seg_mod
 from pipeline.editor_utils import (
+    apply_brush_stroke,
     fit_manual_editor_image,
     manual_editor_click_to_source,
     manual_editor_mask_to_source,
+    split_labels_with_drawn_line,
+    stable_drawable_canvas,
 )
 from wound_analysis import detection
 
@@ -418,6 +421,10 @@ with st.sidebar:
         gif_dur = st.slider("GIF seconds/frame", 0.05, 1.0, 0.25, 0.05)
 
     run_clicked = st.button("▶  RUN PIPELINE", type="primary", width='stretch')
+    segment_only_clicked = st.button(
+        "① Segment only → Step 2", width="stretch",
+        help="Runs Cellpose or watershed, skips automatic cleaning and all "
+             "downstream analysis, and opens the raw masks for drawing edits.")
 
 
 def build_params():
@@ -445,6 +452,31 @@ def build_params():
 # --------------------------------------------------------------------------- #
 # run
 # --------------------------------------------------------------------------- #
+if segment_only_clicked:
+    params = build_params()
+    bar = st.progress(0.0, text="Starting segmentation ...")
+
+    def segment_cb(frac, msg):
+        bar.progress(min(max(frac, 0.0), 1.0), text=msg)
+
+    try:
+        with st.spinner("Segmenting images ..."):
+            res, outputs = prun.run_segmentation_only(
+                params, progress=segment_cb)
+        bar.progress(1.0, text="Segmentation complete.")
+        st.session_state["res"] = res
+        st.session_state["outputs"] = outputs
+        st.session_state.pop("bnd_results", None)
+        st.success(
+            f"Segmented {res['n_frames']} frames with {res['backend']}. "
+            "Download mask.tiff from ① Segmentation or edit it in "
+            "② Manual Cleaning."
+        )
+    except Exception as e:
+        bar.empty()
+        st.error("Segmentation failed—the app is still running.")
+        st.exception(e)
+
 if run_clicked:
     params = build_params()
     bar = st.progress(0.0, text="Starting ...")
@@ -583,6 +615,29 @@ with tab1:
     gif_download_widget("segmentation", "seg", _seg_frames, fps=4,
                         filename="segmentation.gif", out_dir=res["params"]["out_dir"])
 
+    st.write("**Download the raw segmentation for Step 2**")
+    st.caption(
+        "These are the label masks before automatic or manual cleaning. The "
+        "TIFF stack can be uploaded later through Start at Step 2."
+    )
+    raw_dl1, raw_dl2 = st.columns(2)
+    raw_dl1.download_button(
+        "⬇ Raw segmented stack (.tiff)",
+        data=masks_to_tiff_bytes(out["masks"]),
+        file_name="mask.tiff",
+        mime="image/tiff",
+        width="stretch",
+        key="dl_raw_segmented_stack",
+    )
+    raw_dl2.download_button(
+        f"⬇ Raw masks as separate files ({T}, .zip)",
+        data=masks_to_zip_bytes(out["masks"], prefix="mask"),
+        file_name="segmented_masks.zip",
+        mime="application/zip",
+        width="stretch",
+        key="dl_raw_segmented_zip",
+    )
+
     if play_seg:
         time.sleep(0.25)
         st.rerun()
@@ -614,30 +669,15 @@ with tab2:
             st.session_state.get("mc_tool_epoch", 0) + 1
         st.session_state["mc_previous_action"] = action
         
-    # Compatibility shim for streamlit-drawable-canvas on Streamlit >=1.38.
-    # The canvas package calls st_image.image_to_url with the old signature.
     canvas_result = None
-    import streamlit.elements.image as st_image
-    if not hasattr(st_image, "image_to_url"):
-        from streamlit.elements.lib.image_utils import image_to_url as _real_image_to_url
-        from streamlit.elements.lib.layout_utils import LayoutConfig as _LayoutConfig
-
-        def _compat_image_to_url(image, width, clamp, channels,
-                                 output_format, image_id):
-            layout_cfg = _LayoutConfig(
-                width=width if isinstance(width, str) else "content")
-            return _real_image_to_url(
-                image, layout_cfg, clamp, channels, output_format, image_id)
-
-        st_image.image_to_url = _compat_image_to_url
-    from streamlit_drawable_canvas import st_canvas
     from streamlit_image_coordinates import streamlit_image_coordinates
     from PIL import Image
 
     tool_id = action_options.index(action)
     canvas_key = (f"mc_coords_{tool_id}_{f_mc}_"
                   f"{st.session_state.get('mc_update', 0)}_"
-                  f"{st.session_state.get('mc_tool_epoch', 0)}")
+                  f"{st.session_state.get('mc_tool_epoch', 0)}_"
+                  f"{st.session_state.get('mc_canvas_reset', 0)}")
     stored_value = st.session_state.get(canvas_key) \
         if action != "🖌️ Brush Draw" else None
     source_height, source_width = out["cleaned"][f_mc].shape
@@ -710,38 +750,63 @@ with tab2:
     col_img, col_actions = st.columns([3, 1])
     
     brush_size = 5
+    brush_replace = False
     with col_actions:
         if action == "🖌️ Brush Draw":
             st.write("### Brush Settings")
-            brush_size = st.slider("Brush Size", 1, 30, 5)
+            brush_size = st.slider("Brush Size", 1, 60, 8)
+            brush_replace = st.checkbox(
+                "Paint over existing cells", value=False,
+                help="Off: the brush fills background only. On: the new "
+                     "stroke replaces any existing labels under it.")
+            if st.button("Clear brush stroke", width="stretch",
+                         key="clear_brush_canvas"):
+                st.session_state["mc_canvas_reset"] = \
+                    st.session_state.get("mc_canvas_reset", 0) + 1
+                st.rerun()
+        elif action == "✂️ Split":
+            st.write("### Split Settings")
+            split_width = st.slider(
+                "Cut thickness (px)", 1, 20, 5, key="split_width")
+            if st.button("Clear split line", width="stretch",
+                         key="clear_split_canvas"):
+                st.session_state["mc_canvas_reset"] = \
+                    st.session_state.get("mc_canvas_reset", 0) + 1
+                st.rerun()
 
     with col_img:
         if action == "🖌️ Brush Draw":
-            st.caption("Draw on the image to create a new cell mask. Existing cells will **NOT** be overwritten.")
-            canvas_result = st_canvas(
+            st.caption(
+                "Click and drag to paint a new cell. Use Clear brush stroke "
+                "to redraw before applying it."
+            )
+            canvas_result = stable_drawable_canvas(
                 fill_color="rgba(0, 255, 0, 0.5)",
                 stroke_width=max(1, round(brush_size * editor_scale)),
                 stroke_color="rgba(0, 255, 0, 1.0)",
-                background_image=display_bg_img,
                 update_streamlit=True,
                 height=display_bg_img.height,
                 width=display_bg_img.width,
                 drawing_mode="freedraw",
                 key=f"brush_{canvas_key}",
+                background_image=display_bg_img,
             )
         elif action == "✂️ Split":
-            st.caption("Draw a line across a cell to split it into two. The line gap separates the halves.")
-            canvas_result = st_canvas(
+            st.caption(
+                "Click and drag a line across the cell. The cut is extended "
+                "through only the cell(s) touched by your line."
+            )
+            canvas_result = stable_drawable_canvas(
                 fill_color="rgba(255, 255, 0, 0.0)",
                 stroke_width=max(1, round(
-                    st.session_state.get("split_width", 3) * editor_scale)),
+                    st.session_state.get("split_width", 5) * editor_scale)),
                 stroke_color="rgba(255, 255, 0, 1.0)",
-                background_image=display_bg_img,
                 update_streamlit=True,
                 height=display_bg_img.height,
                 width=display_bg_img.width,
                 drawing_mode="line",
                 key=f"split_{canvas_key}",
+                background_image=display_bg_img,
             )
         else:
             displayed_value = streamlit_image_coordinates(
@@ -751,49 +816,30 @@ with tab2:
         
     with col_actions:
         if action == "✂️ Split":
-            st.write("### Split Settings")
-            split_width = st.slider("Line thickness (px)", 1, 10, 3, key="split_width")
             if canvas_result is not None and canvas_result.image_data is not None:
                 split_line_mask = manual_editor_mask_to_source(
                     canvas_result.image_data[:, :, 3] > 0,
                     out["cleaned"][f_mc].shape)
                 if split_line_mask.any():
                     current_cleaned = out["cleaned"][f_mc]
-                    # Find which cell(s) the line crosses
                     touched_ids = set(np.unique(current_cleaned[split_line_mask])) - {0}
                     if touched_ids:
                         st.write(f"**Line crosses cell(s):** {', '.join(str(i) for i in sorted(touched_ids))}")
                         if st.button("Apply Split", type="primary", width='stretch'):
-                            from skimage.morphology import dilation, disk
-                            # Dilate the line slightly for a clean gap
-                            line_dilated = dilation(split_line_mask.astype(np.uint8),
-                                                   disk(max(1, split_width // 2)))
-                            for cid in touched_ids:
-                                cell_mask = (current_cleaned == cid)
-                                # Zero out pixels under the split line
-                                current_cleaned[cell_mask & (line_dilated > 0)] = 0
-                            # Relabel disconnected components to assign new IDs
-                            from skimage.measure import label as sk_label
-                            remaining = current_cleaned.copy()
-                            # Only relabel the touched cells
-                            for cid in touched_ids:
-                                cell_region = (out["cleaned"][f_mc] == cid) & (current_cleaned != 0)
-                                if not cell_region.any():
-                                    continue
-                                sub_labels = sk_label(cell_region.astype(np.uint8))
-                                unique_sub = [u for u in np.unique(sub_labels) if u > 0]
-                                if len(unique_sub) > 1:
-                                    # First component keeps original ID, rest get new IDs
-                                    for j, sub_id in enumerate(unique_sub):
-                                        if j == 0:
-                                            remaining[sub_labels == sub_id] = cid
-                                        else:
-                                            new_id = remaining.max() + 1
-                                            remaining[sub_labels == sub_id] = new_id
-                            out["cleaned"][f_mc] = remaining
-                            st.session_state["outputs"] = out
-                            st.session_state["mc_update"] = st.session_state.get("mc_update", 0) + 1
-                            st.rerun()
+                            updated, _, split_ids = split_labels_with_drawn_line(
+                                current_cleaned, split_line_mask, split_width)
+                            if split_ids:
+                                out["cleaned"][f_mc] = updated
+                                st.session_state["outputs"] = out
+                                st.session_state["mc_update"] = \
+                                    st.session_state.get("mc_update", 0) + 1
+                                st.rerun()
+                            else:
+                                st.warning(
+                                    "The line touched a cell but did not divide "
+                                    "it. Draw across the cell at a different angle "
+                                    "or increase Cut thickness."
+                                )
                     else:
                         st.info("Draw a line across a cell to split it.")
 
@@ -806,15 +852,20 @@ with tab2:
                     st.write("**Drawn stroke detected.**")
                     if st.button("Apply Brush Stroke", type="primary", width='stretch'):
                         current_cleaned = out["cleaned"][f_mc]
-                        new_id = current_cleaned.max() + 1 if current_cleaned.max() > 0 else 1
-                        
-                        # Only apply mask to pixels that are currently empty (0)!
-                        current_cleaned[drawn_mask & (current_cleaned == 0)] = new_id
-                        
-                        out["cleaned"][f_mc] = current_cleaned
-                        st.session_state["outputs"] = out
-                        st.session_state["mc_update"] = st.session_state.get("mc_update", 0) + 1
-                        st.rerun()
+                        updated, new_id, changed = apply_brush_stroke(
+                            current_cleaned, drawn_mask, brush_replace)
+                        if changed:
+                            out["cleaned"][f_mc] = updated
+                            st.session_state["outputs"] = out
+                            st.session_state["mc_update"] = \
+                                st.session_state.get("mc_update", 0) + 1
+                            st.rerun()
+                        else:
+                            st.warning(
+                                "The stroke is entirely over existing cells. "
+                                "Enable Paint over existing cells or draw on "
+                                "background."
+                            )
                         
         elif value is not None:
             x, y = value["x"], value["y"]

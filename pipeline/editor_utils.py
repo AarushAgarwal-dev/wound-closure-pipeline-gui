@@ -17,6 +17,38 @@ def fit_manual_editor_image(image, max_width=600, max_height=720):
     return image.resize(size, resampling.LANCZOS), scale
 
 
+def stable_drawable_canvas(background_image, **kwargs):
+    """Render the drawing canvas with an embedded, rerun-safe background.
+
+    The third-party canvas normally publishes the PIL background through a
+    temporary Streamlit media URL. Embedding that image as a data URL avoids
+    intermittent blank canvases when a rerun invalidates the temporary URL.
+    """
+    import base64
+    import io
+    import streamlit.elements.image as st_image
+    from streamlit_drawable_canvas import st_canvas
+
+    buf = io.BytesIO()
+    background_image.convert("RGB").save(buf, format="PNG", compress_level=1)
+    data_url = "data:image/png;base64," + base64.b64encode(
+        buf.getvalue()).decode("ascii")
+
+    previous = getattr(st_image, "image_to_url", None)
+
+    def _embedded_background(*_args, **_kwargs):
+        return data_url
+
+    st_image.image_to_url = _embedded_background
+    try:
+        return st_canvas(background_image=background_image, **kwargs)
+    finally:
+        if previous is None:
+            delattr(st_image, "image_to_url")
+        else:
+            st_image.image_to_url = previous
+
+
 def manual_editor_click_to_source(value, scale, source_shape):
     """Validate a displayed-image click and map it to source-mask pixels."""
     if not isinstance(value, dict) or "x" not in value or "y" not in value:
@@ -41,3 +73,97 @@ def manual_editor_mask_to_source(mask, source_shape):
     resized = Image.fromarray(mask.astype(np.uint8) * 255).resize(
         (width, height), resampling.NEAREST)
     return np.asarray(resized) > 0
+
+
+def extended_split_line_mask(drawn_mask, source_shape):
+    """Extend a drawn line through the full image while preserving its angle.
+
+    The canvas line only needs to touch the cell. Extending it ensures that a
+    short drag still cuts completely through a wide cell instead of leaving a
+    one-pixel connection around either endpoint.
+    """
+    from skimage.draw import line
+
+    drawn_mask = np.asarray(drawn_mask, dtype=bool)
+    ys, xs = np.nonzero(drawn_mask)
+    result = np.zeros(source_shape, dtype=bool)
+    if len(xs) < 2:
+        result[:drawn_mask.shape[0], :drawn_mask.shape[1]] = drawn_mask
+        return result
+
+    points = np.column_stack((xs, ys)).astype(float)
+    center = points.mean(axis=0)
+    centered = points - center
+    _, _, axes = np.linalg.svd(centered, full_matrices=False)
+    direction = axes[0]
+    distance = float(np.hypot(*source_shape)) * 2.0
+    start = center - direction * distance
+    end = center + direction * distance
+    rr, cc = line(round(start[1]), round(start[0]),
+                  round(end[1]), round(end[0]))
+    valid = ((rr >= 0) & (rr < source_shape[0]) &
+             (cc >= 0) & (cc < source_shape[1]))
+    result[rr[valid], cc[valid]] = True
+    return result
+
+
+def split_labels_with_drawn_line(labels, drawn_mask, thickness=3):
+    """Split only labels touched by a user-drawn line.
+
+    Returns ``(updated_labels, touched_ids, split_ids)``. A touched label is
+    left unchanged unless the extended cut actually creates two components.
+    """
+    from skimage.measure import label as connected_components
+    from skimage.morphology import dilation, disk
+
+    original = np.asarray(labels)
+    drawn_mask = np.asarray(drawn_mask, dtype=bool)
+    touched_ids = [int(v) for v in np.unique(original[drawn_mask]) if v > 0]
+    if not touched_ids:
+        return original.copy(), [], []
+
+    cut = extended_split_line_mask(drawn_mask, original.shape)
+    radius = max(0, int(thickness) // 2)
+    if radius:
+        cut = dilation(cut, disk(radius))
+
+    updated = original.copy()
+    next_id = int(updated.max()) + 1
+    split_ids = []
+    for cell_id in touched_ids:
+        cell = original == cell_id
+        pieces = connected_components(cell & ~cut, connectivity=2)
+        component_ids = [int(v) for v in np.unique(pieces) if v > 0]
+        if len(component_ids) < 2:
+            continue
+
+        # Keep the original ID on the largest piece and allocate new IDs to
+        # the remaining pieces. Cut pixels become background.
+        component_ids.sort(
+            key=lambda v: int(np.count_nonzero(pieces == v)), reverse=True)
+        updated[cell] = 0
+        updated[pieces == component_ids[0]] = cell_id
+        for component_id in component_ids[1:]:
+            updated[pieces == component_id] = next_id
+            next_id += 1
+        split_ids.append(cell_id)
+
+    return updated, touched_ids, split_ids
+
+
+def apply_brush_stroke(labels, drawn_mask, replace_existing=False):
+    """Apply a freehand brush stroke as one new label.
+
+    By default the brush fills background only. ``replace_existing`` allows a
+    correction stroke to replace pixels belonging to existing cells.
+    Returns ``(updated_labels, new_id, changed_pixel_count)``.
+    """
+    updated = np.asarray(labels).copy()
+    drawn_mask = np.asarray(drawn_mask, dtype=bool)
+    target = drawn_mask if replace_existing else drawn_mask & (updated == 0)
+    changed = int(np.count_nonzero(target))
+    if not changed:
+        return updated, None, 0
+    new_id = int(updated.max()) + 1 if updated.max() > 0 else 1
+    updated[target] = new_id
+    return updated, new_id, changed

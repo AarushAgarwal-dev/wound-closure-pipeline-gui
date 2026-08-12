@@ -110,6 +110,11 @@ single-frame TIFF masks, then click **Load masks into Step 2**. The number and
 size of mask frames must match the selected raw images. The masks are loaded
 unchanged; automatic cleaning and all downstream analyses are skipped.
 
+If you want this GUI to perform segmentation but stop before cleaning and
+tracking, click **Segment only → Step 2** in the sidebar. After it finishes,
+download `mask.tiff` from the Segmentation tab or continue directly with the
+manual drawing tools.
+
 In **② Manual Cleaning**, use the erase, recover, merge, split, and brush tools.
 Click **Stack (.tiff)** to download the edited mask stack. Use **Update
 everything** only if you also want to continue with downstream analyses.
@@ -147,12 +152,26 @@ If the automatic segmentation made mistakes, you can fix them here by hand.
 2. Draw a line across the cell you want to divide
 3. Adjust the line thickness if needed
 4. Click "Apply Split"
+
+The drawn split line is extended through the cell(s) it touches, so the drag
+does not need to reach the exact outer boundary. Use **Cut thickness** for
+difficult shapes and **Clear split line** to redraw before applying.
+
+Brush Draw remains a freehand click-and-drag tool. Increase **Brush Size** for
+larger corrections, enable **Paint over existing cells** when the new cell must
+replace existing labels, or use **Clear brush stroke** to start over.
+
 5. The cell becomes two cells with different colours
 
 **Saving your corrections:**
 - 💾 **Save all permanently** — writes to disk
 - ⬇ **All masks (.zip)** — downloads one TIFF per frame, zipped
 - ⬇ **Stack (.tiff)** — downloads a single multi-frame TIFF
+
+The Segmentation tab has a separate **Raw segmented stack (.tiff)** download.
+This saves `mask.tiff` before manual cleaning. You can later upload that file
+through **Start at Step 2** and continue editing without rerunning Cellpose.
+
 - 🔄 **Update everything** — re-runs tracking and analysis with your corrections
 
 The save and download controls are below the editor. Large images are reduced

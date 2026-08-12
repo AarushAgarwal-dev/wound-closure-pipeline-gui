@@ -127,6 +127,43 @@ def run_mask_cleaning(params, masks, progress=None):
     return load_masks_for_manual_cleaning(params, masks, progress)
 
 
+def run_segmentation_only(params, progress=None):
+    """Run segmentation and open the raw labels directly in the Step 2 editor.
+
+    Automatic cleaning and every downstream stage are intentionally skipped.
+    The raw ``mask.tiff`` written by the segmentation backend is preserved and
+    the editor starts from an in-memory copy of those labels.
+    """
+    if progress:
+        progress(0.0, "Loading image frames ...")
+    stack, frame_idx, tl = segment.load_stack(params)
+    masks, mask_path, backend = segment.run(stack, params, progress)
+    cleaned = masks.copy()
+
+    res = {
+        "params": params.to_dict(),
+        "mode": "manual_cleaning_only",
+        "n_frames": len(frame_idx),
+        "frame_idx": frame_idx,
+        "px_size_um": params.px_size_um,
+        "dt_s": params.dt_s,
+        "mask_path": mask_path,
+        "backend": backend,
+        "n_cells_raw": int(masks.max()),
+        "n_tracks": 0,
+    }
+    outputs = {
+        "stack": stack,
+        "masks": masks,
+        "cleaned": cleaned,
+        "frame_idx": frame_idx,
+        "source_files": [tl.files[i] for i in frame_idx],
+    }
+    if progress:
+        progress(1.0, "Segmentation complete. Raw masks are ready for Step 2.")
+    return res, outputs
+
+
 def run_pipeline(params, progress=None, steps=("track", "morphology", "kinematics")):
     """Execute the pipeline. ``progress(frac, msg)`` is an optional callback."""
     def prog(stage_lo, stage_hi):

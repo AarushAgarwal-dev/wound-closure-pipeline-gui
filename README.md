@@ -34,6 +34,16 @@ brush strokes are mapped back to the full-resolution label image. Save and
 download controls appear below the editor, and switching between brush, split,
 and click-based tools starts a fresh editor state.
 
+The Segmentation tab also provides **Raw segmented stack (.tiff)** and a ZIP of
+separate raw mask frames. The downloaded `mask.tiff` can be uploaded directly
+through **Start at Step 2** in a later session. Brush and Split remain
+click-and-drag drawing tools; their image background is embedded so it remains
+available while switching tools or rerunning the page.
+
+Use **Segment only → Step 2** when you want to run Cellpose or watershed and
+stop immediately after segmentation. It skips automatic cleaning, tracking,
+and analysis, exposes the raw TIFF download, and opens the drawing editor.
+
 ---
 
 ## Quick start (local, laptop)
